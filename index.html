@@ -57,17 +57,51 @@
         let currentTab = 'date';
         function showTab(tabName){currentTab=tabName;if(tabName==='date'){document.getElementById('form-date').classList.remove('hidden');document.getElementById('form-order').classList.add('hidden');document.getElementById('tab-date').classList.add('text-indigo-600','border-indigo-500');document.getElementById('tab-date').classList.remove('text-gray-500','hover:text-gray-700','hover:border-gray-300');document.getElementById('tab-order').classList.add('text-gray-500','hover:text-gray-700','hover:border-gray-300');document.getElementById('tab-order').classList.remove('text-indigo-600','border-indigo-500')}else{document.getElementById('form-date').classList.add('hidden');document.getElementById('form-order').classList.remove('hidden');document.getElementById('tab-order').classList.add('text-indigo-600','border-indigo-500');document.getElementById('tab-order').classList.remove('text-gray-500','hover:text-gray-700','hover:border-gray-300');document.getElementById('tab-date').classList.add('text-gray-500','hover:text-gray-700','hover:border-gray-300');document.getElementById('tab-date').classList.remove('text-indigo-600','border-indigo-500')}}
         document.getElementById('order_date').valueAsDate=new Date();
-        async function handleSubmit(){const resultsDiv=document.getElementById('results');const submitBtn=document.getElementById('submit-btn');const btnText=document.getElementById('btn-text');const loader=document.getElementById('loader');resultsDiv.innerHTML='';submitBtn.disabled=true;btnText.textContent='Bundling Images...';loader.classList.remove('hidden');let payload;if(currentTab==='date'){payload={type:'date',date:document.getElementById('order_date').value}}else{payload={type:'order_range',start:parseInt(document.getElementById('start_order').value),end:parseInt(document.getElementById('end_order').value)}}
-        if((payload.type==='order_range'&&(!payload.start||!payload.end))||(payload.type==='date'&&!payload.date)){resultsDiv.innerHTML=`<p class="text-red-600">Please fill in all required fields.</p>`;resetButton();return}
-        try{
-            // *** THIS URL HAS BEEN UPDATED FOR YOU ***
-            const backendUrl = '/.netlify/functions/fetchImages';
-            
-            const response=await fetch(backendUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await response.json();if(!response.ok){throw new Error(data.message||`HTTP error! status: ${response.status}`)}
-        resultsDiv.innerHTML=`<p class="text-green-600">${data.message}</p>`;if(data.zipData){downloadZip(data.zipData,data.fileName);const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);if(isMobile){resultsDiv.innerHTML+=`<p class="text-blue-700 font-semibold mt-2">Download started! Check your "Files" app, then tap the .zip file to uncompress and save to your photo gallery.</p>`}else{resultsDiv.innerHTML+=`<p class="text-green-700 font-semibold mt-2">Your .zip file has been downloaded!</p>`}}}catch(error){resultsDiv.innerHTML=`<p class="text-red-600">An error occurred: ${error.message}</p>`}finally{resetButton()}}
-        function resetButton(){document.getElementById('submit-btn').disabled=false;document.getElementById('btn-text').textContent='Download Images';document.getElementById('loader').classList.add('hidden')}
-        function downloadZip(base64Data,fileName){const byteCharacters=atob(base64Data);const byteNumbers=new Array(byteCharacters.length);for(let i=0;i<byteCharacters.length;i++){byteNumbers[i]=byteCharacters.charCodeAt(i)}
-        const byteArray=new Uint8Array(byteNumbers);const blob=new Blob([byteArray],{type:'application/zip'});const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=fileName;document.body.appendChild(link);link.click();document.body.removeChild(link)}
+        
+        async function handleSubmit(){
+            const resultsDiv=document.getElementById('results');
+            const submitBtn=document.getElementById('submit-btn');
+            const btnText=document.getElementById('btn-text');
+            const loader=document.getElementById('loader');
+            resultsDiv.innerHTML='';
+            submitBtn.disabled=true;
+            btnText.textContent='Bundling Images...';
+            loader.classList.remove('hidden');
+            let payload;
+            if(currentTab==='date'){
+                payload={type:'date',date:document.getElementById('order_date').value}
+            } else {
+                payload={type:'order_range',start:parseInt(document.getElementById('start_order').value),end:parseInt(document.getElementById('end_order').value)}
+            }
+            if((payload.type==='order_range'&&(!payload.start||!payload.end))||(payload.type==='date'&&!payload.date)){
+                resultsDiv.innerHTML=`<p class="text-red-600">Please fill in all required fields.</p>`;
+                resetButton();
+                return
+            }
+            try{
+                const backendUrl = '/.netlify/functions/fetchImages';
+                const response = await fetch(backendUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+                const data = await response.json();
+                if(!response.ok){throw new Error(data.message||`HTTP error! status: ${response.status}`)}
+
+                if(data.downloadUrl){
+                    resultsDiv.innerHTML = `<p class="text-green-600">${data.message}</p><p class="mt-2">Redirecting to download...</p>`;
+                    window.location.href = data.downloadUrl;
+                } else {
+                    resultsDiv.innerHTML = `<p class="text-blue-600">${data.message}</p>`;
+                }
+            } catch(error){
+                resultsDiv.innerHTML=`<p class="text-red-600">An error occurred: ${error.message}</p>`
+            } finally{
+                resetButton();
+            }
+        }
+
+        function resetButton(){
+            document.getElementById('submit-btn').disabled=false;
+            document.getElementById('btn-text').textContent='Download Images';
+            document.getElementById('loader').classList.add('hidden');
+        }
     </script>
 </body>
 </html>
