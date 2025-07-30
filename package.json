@@ -2,7 +2,7 @@
   "name": "shopify-image-app",
   "version": "1.0.0",
   "dependencies": {
-    "@netlify/blobs": "^7.5.0",
+    "@netlify/blobs": "^10.0.7",
     "node-fetch": "^2.6.1",
     "archiver": "^5.3.1"
   }
