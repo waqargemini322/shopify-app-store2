@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Image Exporter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .loader { border-top-color: #3498db; -webkit-animation: spin 1s linear infinite; animation: spin 1s linear infinite; }
+        @-webkit-keyframes spin { 0% { -webkit-transform: rotate(0deg); } 100% { -webkit-transform: rotate(360deg); } }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="max-w-2xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="bg-white shadow-md rounded-lg p-8">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">Order Image Exporter</h1>
+            <p class="text-gray-600 mb-6">Download images from unfulfilled orders as a single .zip file.</p>
+            <div class="mb-6 border-b border-gray-200">
+                <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                    <button id="tab-date" onclick="showTab('date')" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-indigo-600 border-indigo-500">By Date</button>
+                    <button id="tab-order" onclick="showTab('order')" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300">By Order Number</button>
+                </nav>
+            </div>
+            <div id="form-date">
+                <div class="space-y-4">
+                    <div>
+                        <label for="order_date" class="block text-sm font-medium text-gray-700">Select Date</label>
+                        <input type="date" id="order_date" name="order_date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
+                    </div>
+                </div>
+            </div>
+            <div id="form-order" class="hidden">
+                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="start_order" class="block text-sm font-medium text-gray-700">From Order #</label>
+                        <input type="number" id="start_order" name="start_order" placeholder="e.g., 1001" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
+                    </div>
+                    <div>
+                        <label for="end_order" class="block text-sm font-medium text-gray-700">To Order #</label>
+                        <input type="number" id="end_order" name="end_order" placeholder="e.g., 1095" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border">
+                    </div>
+                </div>
+            </div>
+            <div class="mt-8">
+                <button onclick="handleSubmit()" id="submit-btn" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <span id="btn-text">Download Images</span>
+                    <div id="loader" class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-5 w-5 ml-3 hidden"></div>
+                </button>
+            </div>
+            <div id="results" class="mt-6 text-sm"></div>
+        </div>
+    </div>
+    <script>
+        let currentTab = 'date';
+        function showTab(tabName){currentTab=tabName;if(tabName==='date'){document.getElementById('form-date').classList.remove('hidden');document.getElementById('form-order').classList.add('hidden');document.getElementById('tab-date').classList.add('text-indigo-600','border-indigo-500');document.getElementById('tab-date').classList.remove('text-gray-500','hover:text-gray-700','hover:border-gray-300');document.getElementById('tab-order').classList.add('text-gray-500','hover:text-gray-700','hover:border-gray-300');document.getElementById('tab-order').classList.remove('text-indigo-600','border-indigo-500')}else{document.getElementById('form-date').classList.add('hidden');document.getElementById('form-order').classList.remove('hidden');document.getElementById('tab-order').classList.add('text-indigo-600','border-indigo-500');document.getElementById('tab-order').classList.remove('text-gray-500','hover:text-gray-700','hover:border-gray-300');document.getElementById('tab-date').classList.add('text-gray-500','hover:text-gray-700','hover:border-gray-300');document.getElementById('tab-date').classList.remove('text-indigo-600','border-indigo-500')}}
+        document.getElementById('order_date').valueAsDate=new Date();
+        async function handleSubmit(){const resultsDiv=document.getElementById('results');const submitBtn=document.getElementById('submit-btn');const btnText=document.getElementById('btn-text');const loader=document.getElementById('loader');resultsDiv.innerHTML='';submitBtn.disabled=true;btnText.textContent='Bundling Images...';loader.classList.remove('hidden');let payload;if(currentTab==='date'){payload={type:'date',date:document.getElementById('order_date').value}}else{payload={type:'order_range',start:parseInt(document.getElementById('start_order').value),end:parseInt(document.getElementById('end_order').value)}}
+        if((payload.type==='order_range'&&(!payload.start||!payload.end))||(payload.type==='date'&&!payload.date)){resultsDiv.innerHTML=`<p class="text-red-600">Please fill in all required fields.</p>`;resetButton();return}
+        try{
+            // *** THIS URL HAS BEEN UPDATED FOR YOU ***
+            const backendUrl = '/.netlify/functions/fetchImages';
+            
+            const response=await fetch(backendUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await response.json();if(!response.ok){throw new Error(data.message||`HTTP error! status: ${response.status}`)}
+        resultsDiv.innerHTML=`<p class="text-green-600">${data.message}</p>`;if(data.zipData){downloadZip(data.zipData,data.fileName);const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);if(isMobile){resultsDiv.innerHTML+=`<p class="text-blue-700 font-semibold mt-2">Download started! Check your "Files" app, then tap the .zip file to uncompress and save to your photo gallery.</p>`}else{resultsDiv.innerHTML+=`<p class="text-green-700 font-semibold mt-2">Your .zip file has been downloaded!</p>`}}}catch(error){resultsDiv.innerHTML=`<p class="text-red-600">An error occurred: ${error.message}</p>`}finally{resetButton()}}
+        function resetButton(){document.getElementById('submit-btn').disabled=false;document.getElementById('btn-text').textContent='Download Images';document.getElementById('loader').classList.add('hidden')}
+        function downloadZip(base64Data,fileName){const byteCharacters=atob(base64Data);const byteNumbers=new Array(byteCharacters.length);for(let i=0;i<byteCharacters.length;i++){byteNumbers[i]=byteCharacters.charCodeAt(i)}
+        const byteArray=new Uint8Array(byteNumbers);const blob=new Blob([byteArray],{type:'application/zip'});const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=fileName;document.body.appendChild(link);link.click();document.body.removeChild(link)}
+    </script>
+</body>
+</html>
