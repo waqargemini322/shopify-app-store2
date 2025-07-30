@@ -3,14 +3,14 @@
 const fetch = require('node-fetch');
 const archiver = require('archiver');
 const { getStore } = require('@netlify/blobs');
-const { v4: uuidv4 } = require('uuid'); // We need a unique ID for each file
+const { v4: uuidv4 } = require('uuid');
 
 exports.handler = async (event, context) => {
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: JSON.stringify({ message: 'Method Not Allowed' }) };
     }
 
-    const { SHOPIFY_STORE_NAME, ADMIN_API_ACCESS_TOKEN, API_VERSION = '2024-04' } = process.env;
+    const { SHOPIFY_STORE_NAME, ADMIN_API_ACCESS_TOKEN, API_VERSION = '2024-04', NETLIFY_SITE_ID, NETLIFY_API_TOKEN } = process.env;
     if (!SHOPIFY_STORE_NAME || !ADMIN_API_ACCESS_TOKEN) {
         return { statusCode: 500, body: JSON.stringify({ message: 'Server configuration error.' }) };
     }
@@ -38,7 +38,8 @@ exports.handler = async (event, context) => {
             return { statusCode: 200, body: JSON.stringify({ message: 'No product images found in these unfulfilled orders.' }) };
         }
 
-        const downloadUrl = await streamZipToBlobStorage(imageUrls);
+        // Pass manual credentials to the blob storage function
+        const downloadUrl = await streamZipToBlobStorage(imageUrls, { siteID: NETLIFY_SITE_ID, token: NETLIFY_API_TOKEN });
 
         return {
             statusCode: 200,
@@ -55,13 +56,19 @@ exports.handler = async (event, context) => {
     }
 };
 
-async function streamZipToBlobStorage(urls) {
-    const imagesStore = getStore('shopify-images');
+async function streamZipToBlobStorage(urls, blobConfig) {
+    // Manually configure the store with the siteID and token
+    const imagesStore = getStore({
+        name: 'shopify-images',
+        siteID: blobConfig.siteID,
+        token: blobConfig.token
+    });
+
     const key = `${new Date().toISOString().split('T')[0]}-${uuidv4()}.zip`;
     const archive = archiver('zip', { zlib: { level: 9 } });
 
     const uploadPromise = imagesStore.set(key, archive, {
-        metadata: { ttl: 900 } // Automatically delete the file after 900 seconds (15 minutes)
+        metadata: { ttl: 900 }
     });
 
     for (let i = 0; i < urls.length; i++) {
@@ -81,6 +88,8 @@ async function streamZipToBlobStorage(urls) {
     const signedUrl = await imagesStore.get(key, { type: 'url' });
     return signedUrl;
 }
+
+// ... The rest of your helper functions (getAllImageUrlsByQuantity, etc.) remain unchanged ...
 
 async function getAllImageUrlsByQuantity(orders, creds) {
     const finalImageUrlList = [];
