@@ -2,14 +2,14 @@
 
 const fetch = require('node-fetch');
 const archiver = require('archiver');
+const { getStore } = require('@netlify/blobs');
+const { v4: uuidv4 } = require('uuid'); // We need a unique ID for each file
 
-// Main handler function for the serverless endpoint
 exports.handler = async (event, context) => {
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: JSON.stringify({ message: 'Method Not Allowed' }) };
     }
 
-    // *** CORRECTED API VERSION ***
     const { SHOPIFY_STORE_NAME, ADMIN_API_ACCESS_TOKEN, API_VERSION = '2024-04' } = process.env;
     if (!SHOPIFY_STORE_NAME || !ADMIN_API_ACCESS_TOKEN) {
         return { statusCode: 500, body: JSON.stringify({ message: 'Server configuration error.' }) };
@@ -38,15 +38,14 @@ exports.handler = async (event, context) => {
             return { statusCode: 200, body: JSON.stringify({ message: 'No product images found in these unfulfilled orders.' }) };
         }
 
-        const zipBase64 = await createZipFromUrls(imageUrls);
+        const downloadUrl = await streamZipToBlobStorage(imageUrls);
 
         return {
             statusCode: 200,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                message: `Successfully bundled ${imageUrls.length} images from unfulfilled orders.`,
-                zipData: zipBase64,
-                fileName: `shopify-images-${new Date().toISOString().split('T')[0]}.zip`
+                message: `Successfully bundled ${imageUrls.length} images. Your download is ready.`,
+                downloadUrl: downloadUrl
             })
         };
 
@@ -56,31 +55,31 @@ exports.handler = async (event, context) => {
     }
 };
 
-// --- Helper Functions ---
+async function streamZipToBlobStorage(urls) {
+    const imagesStore = getStore('shopify-images');
+    const key = `${new Date().toISOString().split('T')[0]}-${uuidv4()}.zip`;
+    const archive = archiver('zip', { zlib: { level: 9 } });
 
-async function createZipFromUrls(urls) {
-    return new Promise(async (resolve, reject) => {
-        const archive = archiver('zip', { zlib: { level: 9 } });
-        const chunks = [];
-
-        archive.on('data', chunk => chunks.push(chunk));
-        archive.on('end', () => resolve(Buffer.concat(chunks).toString('base64')));
-        archive.on('error', reject);
-
-        for (let i = 0; i < urls.length; i++) {
-            try {
-                const response = await fetch(urls[i]);
-                if (response.ok) {
-                    const buffer = await response.buffer();
-                    archive.append(buffer, { name: `image-${i + 1}.jpg` });
-                }
-            } catch (e) {
-                console.error(`Could not download ${urls[i]}: ${e.message}`);
-            }
-        }
-        
-        archive.finalize();
+    const uploadPromise = imagesStore.set(key, archive, {
+        metadata: { ttl: 900 } // Automatically delete the file after 900 seconds (15 minutes)
     });
+
+    for (let i = 0; i < urls.length; i++) {
+        try {
+            const response = await fetch(urls[i]);
+            if (response.ok) {
+                archive.append(response.body, { name: `image-${i + 1}.jpg` });
+            }
+        } catch (e) {
+            console.error(`Could not download ${urls[i]}: ${e.message}`);
+        }
+    }
+
+    await archive.finalize();
+    await uploadPromise;
+
+    const signedUrl = await imagesStore.get(key, { type: 'url' });
+    return signedUrl;
 }
 
 async function getAllImageUrlsByQuantity(orders, creds) {
@@ -139,17 +138,14 @@ async function getOrdersByDate(date, creds) {
 
 async function getOrdersByNumberRange(startNum, endNum, creds) {
     let allOrders = [];
-    // Start with the initial URL for the first page of open orders
     let nextUrl = `https://${creds.SHOPIFY_STORE_NAME}.myshopify.com/admin/api/${creds.API_VERSION}/orders.json?status=open&limit=250`;
 
-    // Loop as long as Shopify provides a URL for the next page
     while (nextUrl) {
         const response = await fetch(nextUrl, {
             headers: { 'X-Shopify-Access-Token': creds.ADMIN_API_ACCESS_TOKEN }
         });
 
         if (!response.ok) {
-            // Improved error logging to see details from Shopify
             const errorBody = await response.text();
             throw new Error(`Shopify API error: ${response.statusText}. Details: ${errorBody}`);
         }
@@ -161,29 +157,25 @@ async function getOrdersByNumberRange(startNum, endNum, creds) {
 
         allOrders.push(...ordersPage);
         
-        // Optimization: Stop fetching if the oldest order on the page is already below our start number
         const oldestOrderNumInPage = ordersPage[ordersPage.length - 1].order_number;
         if (oldestOrderNumInPage < startNum) {
             break; 
         }
 
-        // --- New Cursor-Based Pagination Logic ---
         const linkHeader = response.headers.get('link');
-        nextUrl = null; // Reset for the next loop
+        nextUrl = null; 
 
         if (linkHeader) {
             const links = linkHeader.split(',');
             const nextLink = links.find(s => s.includes('rel="next"'));
             if (nextLink) {
-                // Extract the URL for the next page provided by Shopify
                 nextUrl = nextLink.match(/<(.*?)>/)[1];
             }
         }
     }
     
-    // Finally, filter the collected orders to match the exact number range
     return allOrders.filter(order => {
-        const orderNum = order.order_number; // Use the more reliable 'order_number' field
+        const orderNum = order.order_number;
         return orderNum >= startNum && orderNum <= endNum;
     });
 }
